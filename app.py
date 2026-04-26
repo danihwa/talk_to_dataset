@@ -9,6 +9,38 @@ from src.agent import run_question
 from src.cli import load_secrets
 
 st.set_page_config(page_title="Data Q&A Agent", layout="wide")
+
+st.markdown(
+    """
+    <style>
+    h1 {
+        background: linear-gradient(90deg, #7C3AED 0%, #A78BFA 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        color: transparent;
+        letter-spacing: -0.02em;
+    }
+    .block-container { padding-top: 3rem; }
+    [data-testid="stChatMessage"]:has([data-testid*="Assistant"]) {
+        border-left: 3px solid #7C3AED;
+        background: rgba(124, 58, 237, 0.04);
+    }
+    [data-testid="stChatMessage"] pre {
+        background: #0B0E13;
+        border-left: 2px solid #7C3AED;
+        border-radius: 6px;
+        padding: 12px 14px;
+    }
+    [data-testid="stChatMessage"] code {
+        font-family: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Consolas, monospace;
+        font-size: 0.875rem;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 load_secrets()
 
 missing = [k for k in ("OPENAI_API_KEY", "SUPABASE_DB_URL") if not os.environ.get(k)]
@@ -31,17 +63,53 @@ def _project_label(url: str) -> str:
 st.session_state.setdefault("messages", [])
 
 with st.sidebar:
-    st.caption(f"Connected to **{_project_label(os.environ['SUPABASE_DB_URL'])}**")
-    if st.button("Clear chat", disabled=not st.session_state.messages):
+    project = _project_label(os.environ["SUPABASE_DB_URL"])
+    st.markdown(
+        f'<div style="display:flex;align-items:center;gap:8px;font-size:0.875rem;">'
+        f'<span style="width:8px;height:8px;border-radius:50%;background:#22C55E;'
+        f'box-shadow:0 0 8px rgba(34,197,94,0.6);"></span>'
+        f'<span>Connected to <strong>{project}</strong></span></div>',
+        unsafe_allow_html=True,
+    )
+    st.divider()
+    st.markdown("**About**")
+    st.caption(
+        "Natural-language Q&A over a Supabase Postgres database. "
+        "The agent inspects the schema, writes a `SELECT`, runs it through "
+        "a read-only role, and replies with the answer plus the SQL it ran."
+    )
+    st.divider()
+    if st.button("Clear chat", disabled=not st.session_state.messages, use_container_width=True):
         st.session_state.messages = []
+    st.divider()
+    st.caption("Built with Streamlit + OpenAI Agents SDK")
+    st.caption("Powered by AI — answers can be wrong; verify important results.")
 
 st.title("Data Q&A Agent")
+st.caption(
+    "Ask questions in plain English or Czech — answered with live SQL against your Supabase database."
+)
 
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-question = st.chat_input("Ask a question about your data")
+if not st.session_state.messages:
+    with st.expander("Try an example", expanded=True):
+        examples = [
+            "List the tables you can see",
+            "How many rows are in each table?",
+            "Kolik řádků má největší tabulka?",
+        ]
+        cols = st.columns(len(examples))
+        for col, ex in zip(cols, examples):
+            if col.button(ex, key=f"ex_{ex}", use_container_width=True):
+                st.session_state["pending_question"] = ex
+                st.rerun()
+
+question = st.chat_input("Ask a question about your data") or st.session_state.pop(
+    "pending_question", None
+)
 if question:
     st.session_state.messages.append({"role": "user", "content": question})
     with st.chat_message("user"):
