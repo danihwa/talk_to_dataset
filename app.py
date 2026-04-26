@@ -61,6 +61,7 @@ def _project_label(url: str) -> str:
 
 
 st.session_state.setdefault("messages", [])
+st.session_state.setdefault("agent_history", [])
 
 with st.sidebar:
     project = _project_label(os.environ["SUPABASE_DB_URL"])
@@ -81,6 +82,7 @@ with st.sidebar:
     st.divider()
     if st.button("Clear chat", disabled=not st.session_state.messages, use_container_width=True):
         st.session_state.messages = []
+        st.session_state.agent_history = []
     st.divider()
     st.caption("Built with Streamlit + OpenAI Agents SDK")
     st.caption("Powered by AI — answers can be wrong; verify important results.")
@@ -97,9 +99,9 @@ for msg in st.session_state.messages:
 if not st.session_state.messages:
     with st.expander("Try an example", expanded=True):
         examples = [
-            "List the tables you can see",
-            "How many rows are in each table?",
-            "Kolik řádků má největší tabulka?",
+            "What are the highest-rated dramas with at least 10,000 watchers?",
+            "Show me the most-watched historical dramas",
+            "Which genres tend to have higher ratings?",
         ]
         cols = st.columns(len(examples))
         for col, ex in zip(cols, examples):
@@ -117,7 +119,9 @@ if question:
     with st.chat_message("assistant"):
         with st.spinner("Thinking…"):
             try:
-                answer = asyncio.run(run_question(question))
+                answer, st.session_state.agent_history = asyncio.run(
+                    run_question(question, st.session_state.agent_history)
+                )
             except Exception as exc:
                 answer = f"⚠️ Something went wrong: {exc}"
         st.markdown(answer)

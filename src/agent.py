@@ -74,12 +74,18 @@ def _jsonable(value: object) -> object:
     return str(value)
 
 
-async def run_question(question: str) -> str:
+async def run_question(
+    question: str, history: list | None = None
+) -> tuple[str, list]:
     agent = Agent(
         name="SQL Analyst",
         instructions=SYSTEM_INSTRUCTIONS,
         tools=[list_tables, describe_table, run_select_query],
         model="gpt-4o-mini",
     )
-    result = await Runner.run(agent, input=question, max_turns=10)
-    return result.final_output
+    if history:
+        input_items = history + [{"role": "user", "content": question}]
+    else:
+        input_items = question
+    result = await Runner.run(agent, input=input_items, max_turns=10)
+    return result.final_output, result.to_input_list()

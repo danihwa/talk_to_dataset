@@ -23,7 +23,7 @@ def main() -> None:
         print('Usage: python -m src.cli "your question"', file=sys.stderr)
         sys.exit(2)
     question = " ".join(sys.argv[1:])
-    answer = asyncio.run(run_question(question))
+    answer, _ = asyncio.run(run_question(question))
     print(answer)
 
 

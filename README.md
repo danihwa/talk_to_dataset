@@ -103,7 +103,7 @@ The Streamlit app runs unchanged on Streamlit Cloud, Hugging Face Spaces, or any
 
 ## Roadmap
 
-- Eval harness (a JSON of question/expected pairs + pass-rate report), streaming output, conversation memory, multi-agent handoff (router → SQL agent | viz agent).
+- Eval harness (a JSON of question/expected pairs + pass-rate report), streaming output, multi-agent handoff (router → SQL agent | viz agent).
 
 ## Tech stack
 
