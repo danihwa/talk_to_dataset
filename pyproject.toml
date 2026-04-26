@@ -1,0 +1,9 @@
+[project]
+name = "text-to-sql-data"
+version = "0.1.0"
+description = "Natural-language data Q&A agent (OpenAI Agents SDK + MCP)."
+requires-python = ">=3.12"
+dependencies = [
+    "openai-agents>=0.14.6",
+    "python-dotenv>=1.2.2",
+]

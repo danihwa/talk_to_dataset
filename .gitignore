@@ -1,0 +1,40 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+*.pyo
+.Python
+
+# Virtual environments
+.venv
+
+# Secrets
+.env
+
+# Data
+data/raw/
+data/cleaned/
+
+# Docker
+docker-compose.yml
+Dockerfile
+
+# Jupyter 
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude
+CLAUDE.md
+
+data-qa-agent-openai-mcp.md
