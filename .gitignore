@@ -14,10 +14,6 @@ wheels/
 # Secrets
 .env
 
-# Data
-data/raw/
-data/cleaned/
-
 # Docker
 docker-compose.yml
 Dockerfile
