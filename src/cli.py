@@ -17,7 +17,7 @@ def load_secrets() -> None:
 
 
 def main() -> None:
-    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
     load_secrets()
     if len(sys.argv) < 2:
         print('Usage: python -m src.cli "your question"', file=sys.stderr)
