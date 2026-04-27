@@ -1,8 +1,17 @@
 # text-to-sql
 
-A natural-language data Q&A agent built with the OpenAI Agents SDK, pointed at a **Supabase** Postgres database. Ask questions in English or Czech, and the agent inspects the schema, writes a `SELECT`, runs it via a local MCP server, and replies with the answer plus the SQL it ran.
+Ask questions about a database in plain English (or Czech) and get answers — no SQL knowledge required. The agent reads your database, writes a query, runs it, and replies with both the answer and the SQL it used so you can double-check.
 
-The agent connects with a dedicated read-only Postgres role, so it physically cannot write to the database — even if the model misbehaves.
+It connects through a read-only role, so it physically cannot change or delete anything in your database — even if the model misbehaves.
+
+![Data Q&A Agent — example conversation with a follow-up question](docs/app_history.png)
+
+## What you can ask
+
+- "List the tables you can see."
+- "What are three highest-rated dramas with at least 10,000 watchers?"
+- "Které drama má nejvíc epizod?" (Czech works too — answer comes back in Czech.)
+- "Delete all rows from cdramas." — politely declined, and physically blocked at the database.
 
 ## Setup
 
@@ -26,7 +35,15 @@ Then, **once per Supabase project**, create the read-only role:
 
 ## Usage
 
-### CLI
+### Streamlit UI
+
+```bash
+uv run streamlit run app.py
+```
+
+The sidebar shows which Supabase project you're connected to. Type questions in the chat input, or click an example to get started.
+
+### Command line
 
 ```bash
 uv run python -m src.cli "list the tables you can see"
@@ -34,102 +51,56 @@ uv run python -m src.cli "list the tables you can see"
 
 One question per invocation; the answer prints to stdout with the SQL the agent ran appended in a fenced code block.
 
-### Streamlit UI
+### Tests
 
 ```bash
-uv run streamlit run app.py
+uv run pytest
 ```
-
-The sidebar shows which Supabase project you're connected to. Type questions in the chat input.
-
-### MCP server
-
-The agent already uses `src/mcp_server.py` under the hood (CLI and Streamlit both spawn it), so you don't need to start it manually. But because it's a normal stdio MCP server, any other MCP client can connect to it too — useful for poking at the tools without an LLM in the loop:
-
-```bash
-uv run mcp dev src/mcp_server.py:mcp             # MCP Inspector (browser UI)
-```
-
-Or wire it into Claude Desktop via `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "text-to-sql": {
-      "command": "uv",
-      "args": ["--directory", "/abs/path/to/text_to_sql_data", "run", "python", "-m", "src.mcp_server"],
-      "env": { "SUPABASE_DB_URL": "postgres://agent_readonly..." }
-    }
-  }
-}
-```
-
-#### Manual smoke checklist
-
-1. Ask "list the tables you can see" — agent calls `list_tables`, names match Supabase Studio.
-2. Ask a row-count question against one of your tables — verify answer + SQL.
-3. Ask a question in Czech — answer comes back in Czech.
-4. Ask "what's the weather?" — agent declines without calling tools.
-5. Ask "delete all rows from <table>" — nothing changes; confirm in Supabase Studio.
-6. Click **Clear chat** — history empties, connection stays.
 
 ## How it works
 
-```
-your question
-     │
-     ▼
-┌─────────────────────────────┐
-│  SQL Analyst agent          │   MCP tools (only read paths exist):
-│  - inspects schema          │     • list_tables
-│  - writes a SELECT          │     • describe_table(name)
-│  - runs it via asyncpg      │     • run_select_query(sql)
-│  - retries on SQL error     │            ▲
-│  - formats the answer       │            │ stdio (MCP)
-└─────────────────────────────┘            │
-     │                              ┌──────┴───────────┐
-     ▼                              │ src/mcp_server.py│ (subprocess)
-   answer + SQL                     └──────────────────┘
-```
+When you ask a question, the agent:
 
-The OpenAI Agents SDK runs an internal model-tool loop: the model decides whether to call a tool or return a final answer. If a query errors, the error goes back into the model's context and it tries again. The loop is capped by `max_turns=10` so a buggy run can't spiral.
+1. Looks up your database schema — which tables exist and what columns they have.
+2. Writes a `SELECT` query to answer the question.
+3. Runs the query against Supabase through a read-only connection.
+4. If the query errors, reads the error and tries again (capped at 10 turns so a buggy run can't spiral).
+5. Replies with the answer and the SQL it used.
 
-The agent doesn't import the tool functions in-process. On every turn it spawns `src/mcp_server.py` as a subprocess and consumes the three tools over the [Model Context Protocol](https://modelcontextprotocol.io/). The server is a thin FastMCP wrapper around `src/sql_tools.py`, where the actual work happens — opening a fresh `asyncpg` connection to Supabase using the read-only role's URI, running one query against `information_schema` or the user's data, and returning JSON or markdown.
+The agent doesn't have a "delete" or "update" tool — only three exist: list tables, describe a table, and run a SELECT. There's nothing in its toolbox that *could* modify data, regardless of what the model decides to do.
 
-## Read-only safety
+One small detail worth noting: vector columns (in this dataset, the 3072-dim `embedding` column on `cdramas`) are filtered out of `describe_table` and query results so they never reach the model. They'd burn a huge amount of context for no benefit — the model can't do anything useful with raw embedding numbers.
 
-Three layers, in order of who enforces what:
+## Why it can't break your database
 
-1. **Database role (Postgres-enforced):** the connection uses the `agent_readonly` role, which has only `SELECT` on `public`. A `DELETE` would fail with `permission denied for table` regardless of what the agent or the tool layer does.
-2. **Tool layer (code-enforced):** only `list_tables`, `describe_table`, and `run_select_query` exist as tools. `run_select_query` additionally rejects anything whose first non-comment token isn't `SELECT`/`WITH`, and rejects multi-statement input.
-3. **System prompt (advisory):** still tells the agent to write SELECT only and decline off-topic questions.
+Three layers of safety, deepest first:
 
-The bottom layer is the one that actually matters — the others just keep the model on the happy path.
+1. **The database itself.** The connection uses a Postgres role (`agent_readonly`) with only `SELECT` permission on the `public` schema. A `DELETE` would fail with `permission denied for table` even if everything above this layer were broken.
+2. **The tool layer.** Only `list_tables`, `describe_table`, and `run_select_query` exist as tools. `run_select_query` additionally rejects anything whose first non-comment token isn't `SELECT`/`WITH`, and rejects multi-statement input.
+3. **The system prompt.** Tells the agent to only write SELECTs and decline off-topic questions.
+
+The first layer is the only one that strictly matters — the others just keep the model on the happy path.
 
 ## Not production-grade
 
 This is a portfolio project. Things I'd do differently for production:
 
 - `agent_readonly` is created with `BYPASSRLS` for simplicity. For a real multi-tenant app, drop that line and write RLS policies — otherwise the agent can read every row in every table regardless of ownership.
-- Schema fits in a single prompt because the demo DB is small. At ~100 tables you'd need schema embedding + retrieval rather than dumping the whole schema.
+- The whole schema fits in a single prompt because the demo DB is small. At ~100 tables you'd need schema embedding + retrieval rather than dumping the whole schema.
 - Result sets larger than 200 rows are truncated. A real app would paginate or summarize server-side.
 - No adversarial-input hardening beyond the read-only enforcement above. Don't point this at a database with sensitive data.
 - Not a replacement for serious text-to-SQL tools like Vanna or Dataherald.
 
 ## Why there's no live demo
 
-The demo dataset was scraped from MyDramaList, and redistributing it via a public URL isn't something I want to do. The code runs locally against your own Supabase project just fine; if you want a deployable version, swap the dataset for something with a permissive license (e.g., Chinook, or your own data) and the app works unchanged.
-
-## Roadmap
-
-- Eval harness (a JSON of question/expected pairs + pass-rate report), streaming output, multi-agent handoff (router → SQL agent | viz agent).
+The demo dataset was scraped from MyDramaList, and redistributing it via a public URL isn't something I want to do. The code runs locally against your own Supabase project just fine; if you want a deployable version, swap the dataset for something with a permissive license (e.g. Chinook, or your own data). The agent itself is schema-agnostic — it introspects the database every run — so you'd just need to update the example questions in `app.py` to match the new schema.
 
 ## Tech stack
 
 - Python 3.12, [uv](https://docs.astral.sh/uv/)
-- [`openai-agents`](https://openai.github.io/openai-agents-python/) — the OpenAI Agents SDK (with its built-in MCP client)
+- [`openai-agents`](https://openai.github.io/openai-agents-python/) — the OpenAI Agents SDK (with its built-in MCP client), running `gpt-4o-mini`
 - [`mcp`](https://modelcontextprotocol.io/) — the Python MCP SDK; the agent's tools live in a FastMCP server it spawns as a subprocess
-- `asyncpg` — direct async Postgres driver
+- `asyncpg` — async Postgres driver
 - Supabase — hosted Postgres + the `agent_readonly` role for safety
 - `streamlit` for the chat UI
 - `python-dotenv` for the API key
@@ -152,4 +123,26 @@ text-to-sql/
 ├── app.py              # Streamlit UI
 ├── pyproject.toml
 └── .env.example
+```
+
+## Using the MCP server with other clients
+
+The agent already spawns `src/mcp_server.py` under the hood, so you don't need to start it manually. But because it's a normal stdio MCP server, any MCP client can connect to it — useful for poking at the tools without an LLM in the loop:
+
+```bash
+uv run mcp dev src/mcp_server.py:mcp             # MCP Inspector (browser UI)
+```
+
+Or wire it into Claude Desktop via `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "text-to-sql": {
+      "command": "uv",
+      "args": ["--directory", "/abs/path/to/text_to_sql_data", "run", "python", "-m", "src.mcp_server"],
+      "env": { "SUPABASE_DB_URL": "postgres://agent_readonly..." }
+    }
+  }
+}
 ```

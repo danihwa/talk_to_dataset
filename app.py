@@ -70,7 +70,7 @@ with st.sidebar:
         f'<div style="display:flex;align-items:center;gap:8px;font-size:0.875rem;">'
         f'<span style="width:8px;height:8px;border-radius:50%;background:#22C55E;'
         f'box-shadow:0 0 8px rgba(34,197,94,0.6);"></span>'
-        f'<span>Connected to <strong>{project}</strong></span></div>',
+        f"<span>Connected to <strong>{project}</strong></span></div>",
         unsafe_allow_html=True,
     )
     st.divider()
@@ -81,7 +81,9 @@ with st.sidebar:
         "a read-only role, and replies with the answer plus the SQL it ran."
     )
     st.divider()
-    if st.button("Clear chat", disabled=not st.session_state.messages, use_container_width=True):
+    if st.button(
+        "Clear chat", disabled=not st.session_state.messages, use_container_width=True
+    ):
         st.session_state.messages = []
         st.session_state.agent_history = []
     st.divider()
@@ -100,7 +102,7 @@ for msg in st.session_state.messages:
 if not st.session_state.messages:
     with st.expander("Try an example", expanded=True):
         examples = [
-            "What are the highest-rated dramas with at least 10,000 watchers?",
+            "What are three highest-rated dramas with at least 10,000 watchers?",
             "Show me the most-watched historical dramas",
             "Which genres tend to have higher ratings?",
         ]
