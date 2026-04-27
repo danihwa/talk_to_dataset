@@ -4,7 +4,7 @@ Ask questions about a database in plain English (or Czech) and get answers — n
 
 It connects through a read-only role, so it physically cannot change or delete anything in your database — even if the model misbehaves.
 
-![Data Q&A Agent — example conversation with a follow-up question](docs/app_history.png)
+<a href="docs/app_history.png" target="_blank" rel="noopener noreferrer"><img src="docs/app_history.png" alt="Data Q&A Agent — example conversation with a follow-up question" width="800"></a>
 
 ## What you can ask
 
@@ -95,6 +95,17 @@ This is a portfolio project. Things I'd do differently for production:
 
 The demo dataset was scraped from MyDramaList, and redistributing it via a public URL isn't something I want to do. The code runs locally against your own Supabase project just fine; if you want a deployable version, swap the dataset for something with a permissive license (e.g. Chinook, or your own data). The agent itself is schema-agnostic — it introspects the database every run — so you'd just need to update the example questions in `app.py` to match the new schema.
 
+## How MCP fits in
+
+[MCP (Model Context Protocol)](https://modelcontextprotocol.io/) is an open protocol that lets LLM applications plug into external tools and data sources. It defines a small client/server contract:
+
+- An **MCP server** exposes a set of tools over a standard interface (usually stdio or HTTP). It doesn't talk to an LLM directly — it just answers tool calls.
+- An **MCP client** runs inside the LLM application (Claude Desktop, an IDE plugin, an agent framework). It connects to one or more servers and surfaces their tools to the model.
+
+In this project, the three tools (`list_tables`, `describe_table`, `run_select_query`) live in `src/mcp_server.py` as a FastMCP server. The OpenAI Agents SDK ships its own MCP client; on each run, the agent spawns that server as a subprocess and talks to it over stdio.
+
+The agent only sees a tool list — it doesn't know the implementations live in another process. That decouples the tool layer from the agent (and from the LLM provider), and means the server is a standard MCP implementation rather than a custom one built just for this app.
+
 ## Tech stack
 
 - Python 3.12, [uv](https://docs.astral.sh/uv/)
@@ -123,26 +134,4 @@ text-to-sql/
 ├── app.py              # Streamlit UI
 ├── pyproject.toml
 └── .env.example
-```
-
-## Using the MCP server with other clients
-
-The agent already spawns `src/mcp_server.py` under the hood, so you don't need to start it manually. But because it's a normal stdio MCP server, any MCP client can connect to it — useful for poking at the tools without an LLM in the loop:
-
-```bash
-uv run mcp dev src/mcp_server.py:mcp             # MCP Inspector (browser UI)
-```
-
-Or wire it into Claude Desktop via `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "text-to-sql": {
-      "command": "uv",
-      "args": ["--directory", "/abs/path/to/text_to_sql_data", "run", "python", "-m", "src.mcp_server"],
-      "env": { "SUPABASE_DB_URL": "postgres://agent_readonly..." }
-    }
-  }
-}
 ```
