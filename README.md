@@ -1,6 +1,6 @@
-# text-to-sql-data
+# text-to-sql
 
-A natural-language data Q&A agent built with the OpenAI Agents SDK, pointed at a **Supabase** Postgres database. Ask questions in English or Czech, and the agent inspects the schema, writes a `SELECT`, runs it via custom function tools, and replies with the answer plus the SQL it ran.
+A natural-language data Q&A agent built with the OpenAI Agents SDK, pointed at a **Supabase** Postgres database. Ask questions in English or Czech, and the agent inspects the schema, writes a `SELECT`, runs it via a local MCP server, and replies with the answer plus the SQL it ran.
 
 The agent connects with a dedicated read-only Postgres role, so it physically cannot write to the database — even if the model misbehaves.
 
@@ -42,6 +42,28 @@ uv run streamlit run app.py
 
 The sidebar shows which Supabase project you're connected to. Type questions in the chat input.
 
+### MCP server
+
+The agent already uses `src/mcp_server.py` under the hood (CLI and Streamlit both spawn it), so you don't need to start it manually. But because it's a normal stdio MCP server, any other MCP client can connect to it too — useful for poking at the tools without an LLM in the loop:
+
+```bash
+uv run mcp dev src/mcp_server.py:mcp             # MCP Inspector (browser UI)
+```
+
+Or wire it into Claude Desktop via `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "text-to-sql": {
+      "command": "uv",
+      "args": ["--directory", "/abs/path/to/text_to_sql_data", "run", "python", "-m", "src.mcp_server"],
+      "env": { "SUPABASE_DB_URL": "postgres://agent_readonly..." }
+    }
+  }
+}
+```
+
 #### Manual smoke checklist
 
 1. Ask "list the tables you can see" — agent calls `list_tables`, names match Supabase Studio.
@@ -58,21 +80,21 @@ your question
      │
      ▼
 ┌─────────────────────────────┐
-│  SQL Analyst agent          │   @function_tools (only read paths exist):
+│  SQL Analyst agent          │   MCP tools (only read paths exist):
 │  - inspects schema          │     • list_tables
 │  - writes a SELECT          │     • describe_table(name)
 │  - runs it via asyncpg      │     • run_select_query(sql)
-│  - retries on SQL error     │
-│  - formats the answer       │
-└─────────────────────────────┘
-     │
-     ▼
-   answer + SQL
+│  - retries on SQL error     │            ▲
+│  - formats the answer       │            │ stdio (MCP)
+└─────────────────────────────┘            │
+     │                              ┌──────┴───────────┐
+     ▼                              │ src/mcp_server.py│ (subprocess)
+   answer + SQL                     └──────────────────┘
 ```
 
 The OpenAI Agents SDK runs an internal model-tool loop: the model decides whether to call a tool or return a final answer. If a query errors, the error goes back into the model's context and it tries again. The loop is capped by `max_turns=10` so a buggy run can't spiral.
 
-The three tools are plain async Python functions decorated with `@function_tool`. They open a fresh `asyncpg` connection to Supabase using the read-only role's URI, run a single query against `information_schema` or the user's data, and return JSON or markdown that goes back into the model's context.
+The agent doesn't import the tool functions in-process. On every turn it spawns `src/mcp_server.py` as a subprocess and consumes the three tools over the [Model Context Protocol](https://modelcontextprotocol.io/). The server is a thin FastMCP wrapper around `src/sql_tools.py`, where the actual work happens — opening a fresh `asyncpg` connection to Supabase using the read-only role's URI, running one query against `information_schema` or the user's data, and returning JSON or markdown.
 
 ## Read-only safety
 
@@ -105,7 +127,8 @@ The demo dataset was scraped from MyDramaList, and redistributing it via a publi
 ## Tech stack
 
 - Python 3.12, [uv](https://docs.astral.sh/uv/)
-- [`openai-agents`](https://openai.github.io/openai-agents-python/) — the OpenAI Agents SDK
+- [`openai-agents`](https://openai.github.io/openai-agents-python/) — the OpenAI Agents SDK (with its built-in MCP client)
+- [`mcp`](https://modelcontextprotocol.io/) — the Python MCP SDK; the agent's tools live in a FastMCP server it spawns as a subprocess
 - `asyncpg` — direct async Postgres driver
 - Supabase — hosted Postgres + the `agent_readonly` role for safety
 - `streamlit` for the chat UI
@@ -114,11 +137,13 @@ The demo dataset was scraped from MyDramaList, and redistributing it via a publi
 ## Project layout
 
 ```
-text-to-sql-data/
+text-to-sql/
 ├── src/
 │   ├── prompts.py      # system instructions, kept separate for easy iteration
 │   ├── db.py           # asyncpg connection + introspection SQL + SELECT-only guard
-│   ├── agent.py        # @function_tool definitions and run_question()
+│   ├── sql_tools.py    # the three async tool implementations
+│   ├── mcp_server.py   # FastMCP server exposing sql_tools over stdio
+│   ├── agent.py        # spawns mcp_server as a subprocess + run_question()
 │   └── cli.py          # argv -> asyncio.run(run_question(...))
 ├── supabase/
 │   └── setup_readonly_role.sql   # one-shot role + grants for the agent

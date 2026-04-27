@@ -1,10 +1,11 @@
 [project]
-name = "text-to-sql-data"
+name = "text-to-sql"
 version = "0.1.0"
 description = "Natural-language data Q&A agent (OpenAI Agents SDK + Supabase via custom function tools)."
 requires-python = ">=3.12"
 dependencies = [
     "asyncpg>=0.30",
+    "mcp[cli]>=1.12",
     "openai-agents>=0.14.6",
     "python-dotenv>=1.2.2",
     "streamlit>=1.56.0",
