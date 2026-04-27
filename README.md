@@ -94,12 +94,9 @@ This is a portfolio project. Things I'd do differently for production:
 - No adversarial-input hardening beyond the read-only enforcement above. Don't point this at a database with sensitive data.
 - Not a replacement for serious text-to-SQL tools like Vanna or Dataherald.
 
-## Deploying
+## Why there's no live demo
 
-The Streamlit app runs unchanged on Streamlit Cloud, Hugging Face Spaces, or any container host. Things to know:
-
-- **`OPENAI_API_KEY`** and **`SUPABASE_DB_URL`** — set both as host secrets. `load_secrets()` falls through to `os.environ` if neither `~/secrets/.env` nor a local `.env` is present.
-- **Costs on a public deploy** — every question makes multiple LLM calls on your key. For a public URL you'd want either a "bring your own API key" input, password gating, or rate limiting. Out of scope for the demo.
+The demo dataset was scraped from MyDramaList, and redistributing it via a public URL isn't something I want to do. The code runs locally against your own Supabase project just fine; if you want a deployable version, swap the dataset for something with a permissive license (e.g., Chinook, or your own data) and the app works unchanged.
 
 ## Roadmap
 

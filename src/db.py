@@ -42,11 +42,16 @@ def is_select(sql: str) -> bool:
 
 
 async def _connect() -> asyncpg.Connection:
+    """Open a fresh asyncpg connection to the configured Supabase URL."""
     url = os.environ["SUPABASE_DB_URL"]
+    # Supabase's pooler runs in transaction mode, which doesn't preserve
+    # prepared statements between calls — disable asyncpg's cache so it
+    # doesn't try to reuse statements that no longer exist on the server.
     return await asyncpg.connect(url, statement_cache_size=0)
 
 
 async def fetch(sql: str, *args: object) -> list[dict]:
+    """Run `sql` (with positional `$1`, `$2`, ... params) and return rows as dicts."""
     conn = await _connect()
     try:
         rows = await conn.fetch(sql, *args)

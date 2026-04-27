@@ -50,6 +50,7 @@ if missing:
 
 
 def _project_label(url: str) -> str:
+    """Pull a friendly Supabase project ref from the connection URL for the sidebar."""
     host = urlparse(url).hostname or ""
     m = re.search(r"db\.([a-z0-9]+)\.supabase\.co", host)
     if m:
@@ -109,6 +110,9 @@ if not st.session_state.messages:
                 st.session_state["pending_question"] = ex
                 st.rerun()
 
+# Streamlit can't programmatically fill st.chat_input, so example buttons
+# stash their text under "pending_question" and trigger a rerun; here we
+# pop it (single-read) so the click takes effect on the next pass only.
 question = st.chat_input("Ask a question about your data") or st.session_state.pop(
     "pending_question", None
 )

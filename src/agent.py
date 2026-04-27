@@ -69,6 +69,7 @@ async def run_select_query(sql: str) -> str:
 
 
 def _jsonable(value: object) -> object:
+    """Coerce non-JSON-native asyncpg values (Decimal, datetime, UUID, ...) to str."""
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
     return str(value)
@@ -77,6 +78,11 @@ def _jsonable(value: object) -> object:
 async def run_question(
     question: str, history: list | None = None
 ) -> tuple[str, list]:
+    """Run one turn against the SQL Analyst agent.
+
+    Returns the final answer plus the updated input list to feed back as
+    `history` on the next call (preserves tool calls and results, not just text).
+    """
     agent = Agent(
         name="SQL Analyst",
         instructions=SYSTEM_INSTRUCTIONS,
@@ -84,6 +90,8 @@ async def run_question(
         model="gpt-4o-mini",
     )
     if history:
+        # Runner.run accepts a bare string on the first turn, or a list of
+        # input items (carrying prior tool calls/results) for follow-up turns.
         input_items = history + [{"role": "user", "content": question}]
     else:
         input_items = question
