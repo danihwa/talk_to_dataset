@@ -14,4 +14,13 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=9.0.3",
+    "pytest-asyncio>=0.24",
 ]
+
+[tool.pytest.ini_options]
+markers = [
+    "llm: hits the OpenAI API (slow, costs money, requires OPENAI_API_KEY)",
+    "live_db: connects to a real Supabase / Postgres (requires SUPABASE_DB_URL)",
+]
+addopts = "-m 'not llm and not live_db'"
+asyncio_mode = "auto"

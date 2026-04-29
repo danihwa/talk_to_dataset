@@ -54,7 +54,9 @@ One question per invocation; the answer prints to stdout with the SQL the agent 
 ### Tests
 
 ```bash
-uv run pytest
+uv run pytest                 # fast: unit tests only
+uv run pytest -m llm          # LLM evals (needs OPENAI_API_KEY, slow, costs money)
+uv run pytest -m live_db      # DB safety check (needs SUPABASE_DB_URL)
 ```
 
 ## How it works
